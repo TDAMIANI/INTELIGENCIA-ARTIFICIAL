@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+*.egg-info/
+# Videos y datasets pesados no van a git
+simulator/video/samples/*.mp4
+ml/datasets/

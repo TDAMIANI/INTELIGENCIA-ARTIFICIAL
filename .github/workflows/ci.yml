@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: mvt
+          POSTGRES_PASSWORD: mvt
+          POSTGRES_DB: mvt
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mvt -d mvt" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r platform/requirements-dev.txt -r simulator/requirements-dev.txt
+      - name: Tests del simulador
+        run: cd simulator && python -m pytest -q
+      - name: Tests de la plataforma
+        run: cd platform && python -m pytest -q
+      - name: Migraciones contra PostgreSQL (upgrade, drift check, seed)
+        env:
+          MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@localhost:5432/mvt
+        run: |
+          cd platform
+          alembic upgrade head
+          alembic check
+          python -m mvtwin.seed
+          python -m mvtwin.seed

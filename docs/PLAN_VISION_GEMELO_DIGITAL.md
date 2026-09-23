@@ -200,7 +200,7 @@ Elegido por ser **open source, conocido y fácil de contratar en LATAM**, evitan
 | Edge: comunicación | paho-mqtt, asyncua (OPC UA), contenedores Docker |
 | Mensajería | EMQX o Mosquitto (MQTT), Sparkplug B |
 | Backend / API | **FastAPI** (Python), Pydantic, SQLAlchemy, Celery/Redis para tareas |
-| Datos | **PostgreSQL + TimescaleDB** (series de tiempo), **MinIO** (imágenes y modelos) |
+| Datos | **PostgreSQL + TimescaleDB** (series de tiempo), almacenamiento **compatible con S3** para imágenes y modelos (SeaweedFS en desarrollo, porque MinIO dejó de publicar imágenes comunitarias; en producción, cualquier S3) |
 | ML / MLOps | PyTorch, Anomalib, scikit-learn, **MLflow**, CVAT, DVC para datasets |
 | Frontend | **React + TypeScript**, Vite, Tailwind, ECharts/Recharts; **Three.js / React Three Fiber** para el visor 3D del gemelo |
 | Tiempo real | WebSockets |
@@ -361,11 +361,11 @@ Fase 3                            ███████████████�
 
 ## 13. Backlog inicial para arrancar el desarrollo (sprints de 2 semanas)
 
-**Sprint 1 — Esqueleto y simulador**
-- [ ] Monorepo con la estructura de la sección 8, Docker Compose (Postgres + Timescale, MinIO, EMQX, API y web).
-- [ ] `simulator/`: publicador MQTT de telemetría sintética de una correa (temperatura de polines, vibración del motor y velocidad) con fallas inyectables.
-- [ ] `simulator/`: servidor RTSP que reproduce videos de ejemplo en loop.
-- [ ] Modelo de datos de activos (planta → área → sistema → componente → sensor) y migraciones.
+**Sprint 1 — Esqueleto y simulador** ✅ completado
+- [x] Monorepo con la estructura de la sección 8, Docker Compose (Postgres + Timescale, almacenamiento S3, EMQX, API). La web se suma en el Sprint 5.
+- [x] `simulator/`: publicador MQTT de telemetría sintética de una correa (temperatura de polines, vibración del motor y velocidad) con fallas inyectables.
+- [x] `simulator/`: servidor RTSP que reproduce videos de ejemplo en loop.
+- [x] Modelo de datos de activos (planta → área → sistema → componente → sensor) y migraciones.
 
 **Sprint 2 — Ingesta y API**
 - [ ] Servicio de ingesta MQTT → TimescaleDB.

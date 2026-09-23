@@ -1,0 +1,113 @@
+# Jerarquía de activos de la planta demo (estilo ISO 14224).
+# Niveles: plant > area > system > subunit > component
+# La cargan `platform` (seed de la base de datos) y sirve de referencia
+# para los códigos de sensores que publica `simulator`.
+#
+# Convención de tópicos MQTT: mvt/{site}/{sensor_code}/telemetry
+
+site: mina-demo
+
+assets:
+  - code: PLT-01
+    level: plant
+    name: Planta concentradora demo
+    children:
+      - code: AREA-CHS
+        level: area
+        name: Chancado secundario
+        children:
+          - code: CV-201
+            level: system
+            name: Correa transportadora CV-201
+            attributes:
+              length_m: 180
+              belt_width_mm: 1200
+              nominal_speed_mps: 3.5
+              design_capacity_tph: 1500
+            sensors:
+              - code: CV-201-PLC
+                type: plc_tags
+                source: plc
+                config:
+                  opcua_node_prefix: "ns=2;s=CV201"
+                  tags: [running, belt_speed_mps, motor_current_a, load_tph]
+            children:
+              - code: CV-201-BELT
+                level: subunit
+                name: Banda
+                attributes:
+                  belt_type: EP-630/4
+                  installed_on: "2024-03-10"
+                sensors:
+                  - code: CV-201-RGB-01
+                    type: rgb_camera
+                    source: edge
+                    config:
+                      stream: rtsp://rtsp:8554/cv-201-rgb-01
+                      detects: [belt_damage, misalignment, spillage, foreign_object]
+                failure_modes:
+                  - code: FM-BELT-RIP
+                    name: Rotura longitudinal de banda
+                    criticality: 5
+                    detection: Visión RGB (detección de daño)
+                  - code: FM-BELT-SPLICE
+                    name: Empalme abierto o dañado
+                    criticality: 4
+                    detection: Visión RGB (detección de daño)
+                  - code: FM-BELT-MISALIGN
+                    name: Desalineamiento de banda
+                    criticality: 3
+                    detection: Visión RGB (posición del borde)
+
+              - code: CV-201-IDL
+                level: subunit
+                name: Estaciones de polines
+                sensors:
+                  - code: CV-201-TH-01
+                    type: thermal_camera
+                    source: edge
+                    config:
+                      stream: rtsp://rtsp:8554/cv-201-th-01
+                      covers: CV-201-IDL-01..CV-201-IDL-40
+                failure_modes:
+                  - code: FM-IDL-BEARING
+                    name: Rodamiento de polín trabado o sobrecalentado
+                    criticality: 4
+                    detection: Termografía (ΔT contra polines vecinos)
+                # Genera un componente por polín: CV-201-IDL-01 .. CV-201-IDL-40
+                generate:
+                  count: 40
+                  code: "CV-201-IDL-{n:02d}"
+                  name: "Polín {n}"
+                  level: component
+
+              - code: CV-201-PUL
+                level: subunit
+                name: Polea motriz
+
+              - code: CV-201-MOT
+                level: subunit
+                name: Motor M-201
+                attributes:
+                  rated_power_kw: 450
+                  rated_current_a: 95
+                  iso_10816_class: III
+                sensors:
+                  - code: CV-201-MOT-VIB
+                    type: vibration
+                    source: edge
+                    config:
+                      unit: mm/s RMS
+                failure_modes:
+                  - code: FM-MOT-IMBALANCE
+                    name: Desbalance
+                    criticality: 3
+                    detection: Vibración (ISO 10816)
+                  - code: FM-MOT-BEARING
+                    name: Falla de rodamiento
+                    criticality: 4
+                    detection: Vibración + temperatura
+
+              - code: CV-201-GBX
+                level: subunit
+                name: Reductor

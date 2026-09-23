@@ -1,0 +1,80 @@
+# Entorno de desarrollo completo de MineVision Twin.
+#   docker compose -f infra/docker-compose.yml up -d --build
+# Credenciales de este archivo: SOLO para desarrollo local.
+
+name: minevision-twin
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: mvt
+      POSTGRES_PASSWORD: mvt
+      POSTGRES_DB: mvt
+    ports: ["5432:5432"]
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mvt -d mvt"]
+      interval: 5s
+      retries: 20
+
+  mqtt:
+    image: emqx/emqx:5.8
+    ports:
+      - "1883:1883"   # MQTT
+      - "18083:18083" # dashboard EMQX (admin / public)
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      retries: 20
+
+  # Almacenamiento de objetos compatible con S3 (imágenes, clips, modelos).
+  # SeaweedFS en lugar de MinIO: MinIO dejó de publicar imágenes de la edición comunitaria.
+  objectstore:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports: ["8333:8333"]
+    volumes:
+      - objects-data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+
+  migrate:
+    build: { context: .., dockerfile: platform/Dockerfile }
+    image: minevision/platform:dev
+    command: ["sh", "-c", "alembic upgrade head && python -m mvtwin.seed"]
+    environment:
+      MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@db:5432/mvt
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    image: minevision/platform:dev
+    environment:
+      MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@db:5432/mvt
+    ports: ["8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  simulator:
+    build: ../simulator
+    command: ["--broker", "mqtt", "--interval", "1"]
+    depends_on:
+      mqtt: { condition: service_healthy }
+
+  rtsp:
+    image: bluenviron/mediamtx:latest
+    ports: ["8554:8554"]
+
+  video-feeder:
+    image: linuxserver/ffmpeg:latest
+    entrypoint: ["/bin/sh", "/feed.sh"]
+    environment:
+      RTSP_URL: rtsp://rtsp:8554
+    volumes:
+      - ../simulator/video/feed.sh:/feed.sh:ro
+      - ../simulator/video/samples:/samples:ro
+    depends_on: [rtsp]
+
+volumes:
+  db-data:
+  objects-data:
