@@ -2,6 +2,9 @@
 
 Convención de tópicos (ver config/plant.yaml):  mvt/{site}/{sensor_code}/telemetry
 Payload JSON:  {"ts": ISO-8601 UTC, "sensor": código, "values": {...}, "simulated": true}
+
+En `values`, un número es una métrica del activo del sensor; un objeto
+{código_de_activo: número} es la misma métrica para varios activos (p. ej. un valor por polín).
 """
 
 from datetime import datetime
@@ -31,7 +34,8 @@ def snapshot_messages(
         },
         f"{code}-MOT-VIB": {"vibration_rms_mm_s": snap.vibration_rms_mm_s},
         f"{code}-TH-01": {
-            "idler_max_temp_c": {sim.idler_code(i + 1): t for i, t in enumerate(snap.idler_temps_c)}
+            # Métrica por activo: {métrica: {código_de_activo: valor}}
+            "max_temp_c": {sim.idler_code(i + 1): t for i, t in enumerate(snap.idler_temps_c)}
         },
         f"{code}-RGB-01": {"belt_edge_offset_mm": snap.belt_edge_offset_mm},
     }

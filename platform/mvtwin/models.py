@@ -8,7 +8,19 @@ import enum
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -102,3 +114,56 @@ class FailureMode(Base):
     detection: Mapped[str | None] = mapped_column(String(200), default=None)
 
     asset: Mapped[Asset] = relationship(back_populates="failure_modes")
+
+
+class Telemetry(Base):
+    """Una medición: formato "largo" (una fila por activo, métrica e instante).
+
+    En PostgreSQL con TimescaleDB es una hypertable particionada por `ts` (ver migración 0002).
+    La clave primaria empieza por (asset_id, metric, ts), que es la consulta típica de tendencias.
+    """
+
+    __tablename__ = "telemetry"
+
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    metric: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    sensor_id: Mapped[int] = mapped_column(ForeignKey("sensors.id", ondelete="CASCADE"), primary_key=True)
+    value: Mapped[float] = mapped_column(Float)
+
+
+class AlarmSeverity(str, enum.Enum):
+    warning = "warning"
+    critical = "critical"
+
+
+class AlarmStatus(str, enum.Enum):
+    active = "active"
+    cleared = "cleared"
+
+
+class Alarm(Base):
+    """Alarma de condición. Hay como máximo una alarma activa por (activo, regla)."""
+
+    __tablename__ = "alarms"
+    __table_args__ = (Index("ix_alarms_status_raised_at", "status", "raised_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), index=True)
+    sensor_id: Mapped[int | None] = mapped_column(ForeignKey("sensors.id", ondelete="SET NULL"), default=None)
+    rule_code: Mapped[str] = mapped_column(String(64))
+    metric: Mapped[str] = mapped_column(String(64))
+    severity: Mapped[AlarmSeverity] = mapped_column(_enum(AlarmSeverity, "alarm_severity"))
+    status: Mapped[AlarmStatus] = mapped_column(_enum(AlarmStatus, "alarm_status"), default=AlarmStatus.active)
+    message: Mapped[str] = mapped_column(String(300))
+    # Valor que disparó la alarma y valor máximo observado mientras estuvo activa.
+    value: Mapped[float] = mapped_column(Float)
+    peak_value: Mapped[float] = mapped_column(Float)
+    threshold: Mapped[float] = mapped_column(Float)
+    raised_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(100), default=None)
+
+    asset: Mapped[Asset] = relationship()
+    sensor: Mapped[Sensor | None] = relationship()

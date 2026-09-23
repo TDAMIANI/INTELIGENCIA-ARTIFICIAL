@@ -16,26 +16,44 @@ from mvtwin.db import Base, get_session  # noqa: E402
 from mvtwin.seed import load_plant_config, seed  # noqa: E402
 from mvtwin.settings import settings  # noqa: E402
 
+# Para correr también los tests contra PostgreSQL/TimescaleDB real:
+#   MVT_TEST_PG_URL=postgresql+psycopg://mvt:mvt@localhost:5432/mvt_test pytest
+PG_URL = os.environ.get("MVT_TEST_PG_URL")
 
-@pytest.fixture
-def session() -> Iterator[Session]:
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+
+@pytest.fixture(params=["sqlite"] + (["postgresql"] if PG_URL else []))
+def session_factory(request) -> Iterator[sessionmaker[Session]]:
+    if request.param == "sqlite":
+        engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+    else:
+        engine = create_engine(PG_URL)
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as s:
         seed(s, load_plant_config(settings.plant_config))
-    with factory() as s:
-        yield s
+    yield factory
+    Base.metadata.drop_all(engine)
     engine.dispose()
 
 
 @pytest.fixture
-def client(session: Session) -> Iterator[TestClient]:
-    app.dependency_overrides[get_session] = lambda: session
+def session(session_factory: sessionmaker[Session]) -> Iterator[Session]:
+    with session_factory() as s:
+        yield s
+
+
+@pytest.fixture
+def client(session_factory: sessionmaker[Session]) -> Iterator[TestClient]:
+    def override() -> Iterator[Session]:
+        with session_factory() as s:
+            yield s
+
+    app.dependency_overrides[get_session] = override
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

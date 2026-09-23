@@ -1,16 +1,12 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from mvtwin.db import get_session
+from mvtwin.api.common import DbSession
 from mvtwin.models import Asset
-from mvtwin.schemas import AssetCreate, AssetDetail, AssetNode, AssetSummary
+from mvtwin.schemas import AssetCreate, AssetDetail, AssetNode, AssetSummary, AssetUpdate
 
 router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
-
-DbSession = Annotated[Session, Depends(get_session)]
 
 
 def _get_by_code(session: Session, code: str) -> Asset:
@@ -99,3 +95,22 @@ def create_asset(payload: AssetCreate, session: DbSession) -> AssetDetail:
     session.add(asset)
     session.commit()
     return _to_detail(_get_by_code(session, asset.code))
+
+
+@router.patch("/{code}", response_model=AssetDetail)
+def update_asset(code: str, payload: AssetUpdate, session: DbSession) -> AssetDetail:
+    asset = _get_by_code(session, code)
+    if payload.name is not None:
+        asset.name = payload.name
+    if payload.attributes is not None:
+        asset.attributes = payload.attributes
+    session.commit()
+    return _to_detail(_get_by_code(session, code))
+
+
+@router.delete("/{code}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_asset(code: str, session: DbSession) -> Response:
+    """Borra el activo y todo lo que cuelga de él (hijos, sensores, telemetría y alarmas)."""
+    session.delete(_get_by_code(session, code))
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

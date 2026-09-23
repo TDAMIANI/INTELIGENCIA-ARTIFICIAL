@@ -26,7 +26,9 @@ jobs:
         run: pip install -r platform/requirements-dev.txt -r simulator/requirements-dev.txt
       - name: Tests del simulador
         run: cd simulator && python -m pytest -q
-      - name: Tests de la plataforma
+      - name: Tests de la plataforma (SQLite + TimescaleDB)
+        env:
+          MVT_TEST_PG_URL: postgresql+psycopg://mvt:mvt@localhost:5432/mvt
         run: cd platform && python -m pytest -q
       - name: Migraciones contra PostgreSQL (upgrade, drift check, seed)
         env:

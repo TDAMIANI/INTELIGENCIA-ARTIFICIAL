@@ -367,10 +367,11 @@ Fase 3                            ███████████████�
 - [x] `simulator/`: servidor RTSP que reproduce videos de ejemplo en loop.
 - [x] Modelo de datos de activos (planta → área → sistema → componente → sensor) y migraciones.
 
-**Sprint 2 — Ingesta y API**
-- [ ] Servicio de ingesta MQTT → TimescaleDB.
-- [ ] API REST: CRUD de activos, consulta de series de tiempo y eventos.
-- [ ] WebSocket de alarmas en tiempo real.
+**Sprint 2 — Ingesta y API** ✅ completado
+- [x] Servicio de ingesta MQTT → TimescaleDB.
+- [x] API REST: CRUD de activos, consulta de series de tiempo y eventos.
+- [x] WebSocket de alarmas en tiempo real.
+- [x] Adelantado del Sprint 4: alarmas por umbral con confirmación, histéresis y escalamiento (reglas en `config/plant.yaml`).
 
 **Sprint 3 — Pipeline de visión en el edge**
 - [ ] Captura RTSP + inferencia YOLO preentrenada (prueba con las clases base).

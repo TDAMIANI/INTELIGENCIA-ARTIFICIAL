@@ -51,9 +51,23 @@ services:
     image: minevision/platform:dev
     environment:
       MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@db:5432/mvt
+      MVT_MQTT_HOST: mqtt
     ports: ["8000:8000"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+      mqtt: { condition: service_healthy }
+
+  # MQTT -> TimescaleDB + alarmas en tiempo real
+  ingestion:
+    image: minevision/platform:dev
+    command: ["python", "-m", "mvtwin.ingestion"]
+    environment:
+      MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@db:5432/mvt
+      MVT_MQTT_HOST: mqtt
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      mqtt: { condition: service_healthy }
 
   simulator:
     build: ../simulator

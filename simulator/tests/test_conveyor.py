@@ -98,5 +98,5 @@ def test_messages_match_plant_sensor_codes() -> None:
     }
     thermal = msgs["mvt/mina-demo/CV-201-TH-01/telemetry"]
     assert thermal["ts"] == "2026-01-01T00:00:00.000+00:00"
-    assert len(thermal["values"]["idler_max_temp_c"]) == 40
-    assert "CV-201-IDL-40" in thermal["values"]["idler_max_temp_c"]
+    assert len(thermal["values"]["max_temp_c"]) == 40
+    assert "CV-201-IDL-40" in thermal["values"]["max_temp_c"]

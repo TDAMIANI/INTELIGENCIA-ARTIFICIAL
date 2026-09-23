@@ -111,3 +111,43 @@ assets:
               - code: CV-201-GBX
                 level: subunit
                 name: Reductor
+
+# Reglas de alarma de primer nivel (las evalúa el servicio de ingesta en tiempo real).
+# - warning / critical: umbrales de severidad.
+# - clear_below: la alarma se cierra recién cuando el valor baja de este nivel (histéresis).
+# - confirm: cantidad de muestras seguidas por encima del umbral antes de alarmar
+#   (evita alarmas por un pico aislado de ruido).
+# - mode: "value" (valor directo), "abs" (valor absoluto) o "delta_neighbours"
+#   (diferencia contra la mediana de los `neighbours` activos vecinos de cada lado,
+#   ideal para termografía de polines: independiza la alarma de la temperatura ambiente).
+alarm_rules:
+  - code: MOT-VIB-ISO10816
+    sensor: CV-201-MOT-VIB
+    metric: vibration_rms_mm_s
+    mode: value
+    warning: 4.5      # ISO 10816 clase III: límite zona B/C
+    critical: 7.1     # límite zona C/D
+    clear_below: 4.0
+    confirm: 3
+    message: "Vibración del motor {value:.1f} mm/s (umbral {threshold} mm/s)"
+
+  - code: IDL-HOTSPOT
+    sensor: CV-201-TH-01
+    metric: max_temp_c
+    mode: delta_neighbours
+    neighbours: 3
+    warning: 15       # °C por encima de sus vecinos
+    critical: 30
+    clear_below: 10
+    confirm: 3
+    message: "{asset}: {value:.0f} °C sobre sus vecinos (posible rodamiento trabado)"
+
+  - code: BELT-MISALIGN
+    sensor: CV-201-RGB-01
+    metric: belt_edge_offset_mm
+    mode: abs
+    warning: 30
+    critical: 50
+    clear_below: 20
+    confirm: 5
+    message: "Banda desalineada {value:.0f} mm"
