@@ -94,3 +94,44 @@ def test_frames_mode_hides_camera_telemetry() -> None:
     topics = [t for t, _ in snapshot_messages("s", sim, snap, datetime.now(UTC),
                                               frozenset({"CV-201-TH-01", "CV-201-RGB-01"}))]
     assert topics == ["mvt/s/CV-201-PLC/telemetry", "mvt/s/CV-201-MOT-VIB/telemetry"]
+
+
+def test_plc_over_opcua_roundtrip() -> None:
+    """Servidor OPC UA del simulador (PLC virtual) -> lector del edge -> telemetría."""
+    import socket
+
+    pytest.importorskip("asyncua")
+    from mvsim.plc_server import PlcServer
+
+    from mvedge.config import load_config
+    from mvedge.plc import PlcConfig, PlcReader
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    endpoint = f"opc.tcp://127.0.0.1:{port}/minevision/"
+    server = PlcServer(endpoint).start()
+    try:
+        sim = sim_mod.ConveyorSimulator(seed=1)
+        for _ in range(30):
+            snap = sim.step(1.0)
+        server.update(snap)
+
+        cfg = load_config(ROOT / "edge" / "config" / "edge.yaml")["plc"] | {"endpoint": endpoint}
+        sink = Sink()
+        reader = PlcReader(PlcConfig.from_dict(cfg), "mina-demo", sink)
+        from asyncua.sync import Client
+
+        client = Client(endpoint, timeout=5)
+        client.connect()
+        try:
+            values = reader.read_once(client)
+        finally:
+            client.disconnect()
+        assert values["running"] is True
+        assert values["belt_speed_mps"] == pytest.approx(snap.belt_speed_mps)
+        assert values["motor_current_a"] == pytest.approx(snap.motor_current_a)
+        (msg,) = sink.topics("/telemetry")
+        assert msg["sensor"] == "CV-201-PLC" and msg["values"]["load_tph"] == pytest.approx(snap.load_tph)
+    finally:
+        server.stop()

@@ -16,6 +16,7 @@ from mvedge.config import as_bool, load_config
 from mvedge.detection import RuleEngine, YoloDetector, ZoneRule
 from mvedge.events import EventPublisher, SnapshotStore
 from mvedge.pipelines import RgbPipeline, ThermalPipeline
+from mvedge.plc import PlcConfig, PlcReader
 from mvedge.sources import FrameSource, MqttFrameSource, RtspSource
 from mvedge.thermal import HotspotDetector, rois_from_config
 
@@ -108,6 +109,13 @@ def run(config_path: str) -> None:  # pragma: no cover - glue, se prueba con doc
 
     stop = threading.Event()
     threads = []
+    plc_cfg = cfg.get("plc")
+    if plc_cfg and as_bool(plc_cfg.get("enabled", True)):
+        reader = PlcReader(PlcConfig.from_dict(plc_cfg), site, publish)
+        t = threading.Thread(target=reader.run, args=(stop,), name="plc", daemon=True)
+        t.start()
+        threads.append(t)
+        log.info("Lectura del PLC por OPC UA: %s", plc_cfg["endpoint"])
     for cam in cfg["cameras"]:
         if not as_bool(cam.get("enabled", True)):
             continue
@@ -138,4 +146,5 @@ def main() -> None:  # pragma: no cover
     parser.add_argument("--config", default="config/edge.yaml")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.getLogger("asyncua").setLevel(logging.WARNING)  # muy verboso en INFO
     run(args.config)

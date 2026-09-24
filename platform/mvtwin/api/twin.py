@@ -1,13 +1,16 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import case, select
 from sqlalchemy.orm import selectinload
 
 from mvtwin.api.common import DbSession, asset_id_by_code, subtree_ids
+from mvtwin.auth import Role, User, actor_name, require
+from mvtwin.integrations import cmms
 from mvtwin.models import Asset, HealthHistory, Recommendation, RecommendationStatus
 from mvtwin.queries import as_utc
 from mvtwin.schemas import AssetSummary, HealthOut, HealthPoint, RecommendationOut, RecommendationUpdate
+from mvtwin.settings import settings
 
 router = APIRouter(prefix="/api/v1", tags=["twin"])
 
@@ -77,8 +80,14 @@ def list_recommendations(
 
 
 @router.patch("/recommendations/{rec_id}", response_model=RecommendationOut)
-def update_recommendation(rec_id: int, payload: RecommendationUpdate, session: DbSession) -> RecommendationOut:
-    """El planificador acepta (genera la OT), descarta o cierra la recomendación."""
+def update_recommendation(
+    rec_id: int, payload: RecommendationUpdate, session: DbSession, user: User = Depends(require(Role.planner))
+) -> RecommendationOut:
+    """El planificador acepta (genera la OT), descarta o cierra la recomendación.
+
+    Si hay un CMMS configurado, aceptar crea la orden allí; si el CMMS falla, la
+    recomendación no cambia de estado (502) para que no quede "planificada" sin orden.
+    """
     rec = session.get(
         Recommendation, rec_id,
         options=[selectinload(Recommendation.asset), selectinload(Recommendation.failure_mode)],
@@ -86,9 +95,41 @@ def update_recommendation(rec_id: int, payload: RecommendationUpdate, session: D
     if rec is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Recomendación {rec_id} no encontrada")
     rec.status = payload.status
-    rec.updated_by = payload.user
+    rec.updated_by = actor_name(user, payload.user)
     rec.updated_at = datetime.now(UTC)
     if payload.note is not None:
         rec.note = payload.note
+    if payload.status is RecommendationStatus.accepted and settings.cmms_webhook_url and not rec.work_order_ref:
+        try:
+            rec.work_order_ref = cmms.send_work_order(rec, settings.cmms_webhook_url, cmms.http_json_sender)
+        except cmms.CmmsError as exc:
+            session.rollback()
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     session.commit()
     return RecommendationOut.from_model(rec)
+
+
+@router.get(
+    "/work-orders/export.csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+    dependencies=[Depends(require(Role.planner))],
+)
+def export_work_orders(
+    session: DbSession,
+    status_: list[RecommendationStatus] | None = Query(None, alias="status"),
+) -> Response:
+    """Órdenes de trabajo en CSV para cargar en el CMMS. Por defecto, las recomendaciones planificadas."""
+    statuses = status_ or [RecommendationStatus.accepted]
+    recs = session.scalars(
+        select(Recommendation)
+        .options(selectinload(Recommendation.asset), selectinload(Recommendation.failure_mode))
+        .where(Recommendation.status.in_(statuses))
+        .order_by(PRIORITY_ORDER, Recommendation.due_by)
+    ).all()
+    filename = f"ordenes-de-trabajo-{datetime.now(UTC):%Y%m%d-%H%M}.csv"
+    return Response(
+        content=cmms.to_csv(list(recs)),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

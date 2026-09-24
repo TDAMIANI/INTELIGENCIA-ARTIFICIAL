@@ -385,20 +385,22 @@ Fase 3                            ███████████████�
 - [x] Recomendaciones de mantenimiento: regla más exigente por activo, sin duplicados, escalamiento, supresión tras descarte y vínculo al modo de falla del FMEA.
 - [x] Extra: tendencia de la última hora y tiempo estimado hasta la zona crítica (primera aproximación a la RUL), que adelanta el plazo de la recomendación.
 
-**Sprint 5 — Dashboard**
-- [ ] Árbol de activos con el color de salud.
-- [ ] Ficha del gemelo (esquema 2D de la correa con los polines coloreados; 3D en un sprint posterior).
-- [ ] Centro de alarmas con evidencia y botones de feedback.
+**Sprint 5 — Dashboard** ✅ completado
+- [x] Árbol de activos con el color de salud (siempre con ícono y texto, no solo color).
+- [x] Ficha del gemelo: esquema 2D de la correa con los 40 polines coloreados por salud, explicación del índice, tendencias con umbrales e historial.
+- [x] Centro de alarmas con evidencia y confirmación del operador; plan de mantenimiento y galería de visión; todo en vivo por WebSocket.
 
-**Sprint 6 — Integración y endurecimiento**
-- [ ] Cliente OPC UA (contra un simulador de PLC, p. ej., el servidor de ejemplo de asyncua).
-- [ ] Exportación de OT (CSV/API genérica) y notificaciones por email/Teams.
-- [ ] Autenticación y roles (Keycloak), pruebas y CI.
+**Sprint 6 — Integración y endurecimiento** ✅ completado
+- [x] Cliente OPC UA en el edge (solo lectura) contra un PLC simulado por OPC UA.
+- [x] Exportación de OT (CSV con formato de aviso SAP PM y webhook al CMMS) y notificaciones por email y Teams/Slack.
+- [x] Autenticación y roles: usuarios locales con JWT o SSO por OIDC (Keycloak/Azure AD). Pruebas y CI para todos los módulos, incluido el tablero.
+- [x] Extra: compresión y retención de datos en TimescaleDB, y health checks.
 
----
+**Estado:** el MVP de software está completo y probado de punta a punta con el simulador. Lo que sigue es la fase de piloto en planta (fases 1 y 3 de la sección 9): cámaras reales, un modelo propio de daños en banda y la medición de los KPIs.
 
 ## 14. Próximos pasos inmediatos
 
 1. **Validar este plan** con un cliente o una planta candidata y elegir el activo piloto con datos reales de paradas.
 2. **Conseguir videos reales** (aunque sean de celular o de inspecciones anteriores) de correas y termografías para empezar a prototipar los modelos.
-3. **Arrancar el Sprint 1** en este repositorio: esqueleto + simulador, que permiten desarrollar todo el sistema sin depender del acceso a la mina.
+3. ~~Arrancar el Sprint 1~~ → **hecho**: los sprints 1 a 6 están implementados en este repositorio (ver README).
+4. **Instalar la prueba de concepto en planta** (Fase 1): 1 cámara térmica radiométrica + 1 RGB + 1 edge en un tramo de correa, y ajustar ROIs, calibración y umbrales con datos reales.

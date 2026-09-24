@@ -2,10 +2,11 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from mvtwin import __version__
-from mvtwin.api import alarms, assets, events, live, telemetry, twin
+from mvtwin.api import alarms, assets, auth, events, live, telemetry, twin
+from mvtwin.auth import current_user
 from mvtwin.settings import settings
 
 log = logging.getLogger("mvtwin.api")
@@ -30,12 +31,15 @@ app = FastAPI(
     description="API del gemelo digital para mantenimiento predictivo en plantas mineras.",
     lifespan=lifespan,
 )
-app.include_router(assets.router)
-app.include_router(telemetry.router)
-app.include_router(alarms.router)
-app.include_router(events.router)
-app.include_router(twin.router)
-app.include_router(live.router)
+# Todas las rutas de datos exigen sesión (si la autenticación está activada).
+protected = [Depends(current_user)]
+app.include_router(auth.router)
+app.include_router(assets.router, dependencies=protected)
+app.include_router(telemetry.router, dependencies=protected)
+app.include_router(alarms.router, dependencies=protected)
+app.include_router(events.router, dependencies=protected)
+app.include_router(twin.router, dependencies=protected)
+app.include_router(live.router)  # los WebSockets validan el token por su cuenta
 
 
 @app.get("/health", tags=["system"])

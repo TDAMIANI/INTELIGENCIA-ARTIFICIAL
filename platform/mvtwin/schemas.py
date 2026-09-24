@@ -200,6 +200,7 @@ class RecommendationOut(BaseModel):
     updated_at: datetime
     updated_by: str | None
     note: str | None
+    work_order_ref: str | None = None
 
     @classmethod
     def from_model(cls, rec: "Recommendation") -> "RecommendationOut":
@@ -220,6 +221,7 @@ class RecommendationOut(BaseModel):
             updated_at=rec.updated_at,
             updated_by=rec.updated_by,
             note=rec.note,
+            work_order_ref=rec.work_order_ref,
         )
 
 

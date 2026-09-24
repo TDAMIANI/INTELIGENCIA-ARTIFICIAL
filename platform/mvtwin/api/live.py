@@ -16,6 +16,8 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from mvtwin.auth import websocket_user
+
 log = logging.getLogger("mvtwin.live")
 
 router = APIRouter(tags=["live"])
@@ -93,6 +95,9 @@ def start_mqtt_bridge(host: str, port: int):  # pragma: no cover - se prueba con
 
 
 async def _pump(websocket: WebSocket, channel: str) -> None:
+    if websocket_user(websocket) is None:
+        await websocket.close(code=4401, reason="Falta iniciar sesión")
+        return
     await websocket.accept()
     q = hub.subscribe(channel)
     try:

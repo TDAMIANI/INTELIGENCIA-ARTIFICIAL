@@ -55,3 +55,15 @@ cameras:
         message: "Persona en zona de riesgo de la correa ({confidence:.0%})"
         zone: [[0, 0], [640, 0], [640, 360], [0, 360]]
     cooldown_s: 60
+
+# PLC / SCADA por OPC UA (solo lectura). Con el simulador: --plc opcua.
+plc:
+  enabled: ${MVT_EDGE_PLC:-false}
+  endpoint: ${MVT_OPCUA_ENDPOINT:-opc.tcp://localhost:4840/minevision/}
+  sensor: CV-201-PLC
+  interval_s: 1
+  tags:
+    running: "ns=2;s=CV201.running"
+    belt_speed_mps: "ns=2;s=CV201.belt_speed_mps"
+    motor_current_a: "ns=2;s=CV201.motor_current_a"
+    load_tph: "ns=2;s=CV201.load_tph"

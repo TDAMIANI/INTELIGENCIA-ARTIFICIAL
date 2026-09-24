@@ -243,6 +243,8 @@ class Recommendation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[str | None] = mapped_column(String(100), default=None)
     note: Mapped[str | None] = mapped_column(String(500), default=None)
+    # Número de la orden de trabajo / aviso en el CMMS (SAP PM, Maximo...), si se envió.
+    work_order_ref: Mapped[str | None] = mapped_column(String(100), default=None)
 
     asset: Mapped[Asset] = relationship()
     failure_mode: Mapped[FailureMode | None] = relationship()

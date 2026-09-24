@@ -12,6 +12,9 @@ Ejemplos:
   # (el edge las analiza y publica esa telemetría):
   python -m mvsim.publisher --broker localhost --cameras frames
 
+  # Exponer los tags del PLC por OPC UA (los lee el edge) en lugar de publicarlos por MQTT:
+  python -m mvsim.publisher --broker localhost --cameras frames --plc opcua
+
 Comandos en tiempo de ejecución (JSON al tópico mvt/{site}/sim/cmd):
   {"action": "inject", "kind": "idler_bearing", "target": 12, "ramp_s": 300}
   {"action": "inject", "kind": "motor_imbalance", "start_s": 30}
@@ -118,6 +121,12 @@ def run(args: argparse.Namespace) -> None:
 
     frames = args.cameras == "frames"
     exclude = frozenset(camera_codes(sim)) if frames else frozenset()
+    plc = None
+    if args.plc == "opcua":
+        from mvsim.plc_server import PlcServer
+
+        plc = PlcServer(args.opcua_endpoint, prefix=args.conveyor.replace("-", "")).start()
+        exclude |= {f"{args.conveyor}-PLC"}
     if frames:
         import numpy as np
 
@@ -137,6 +146,8 @@ def run(args: argparse.Namespace) -> None:
 
             snap = sim.step(sim_dt)
             ts = t0 + timedelta(seconds=sim.t)
+            if plc is not None:
+                plc.update(snap)
             for topic, payload in snapshot_messages(args.site, sim, snap, ts, exclude):
                 if client is None:
                     print(topic, json.dumps(payload, ensure_ascii=False), flush=True)
@@ -158,6 +169,8 @@ def run(args: argparse.Namespace) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        if plc is not None:
+            plc.stop()
         if client is not None:
             client.loop_stop()
             client.disconnect()
@@ -182,6 +195,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="telemetry: publica los valores de las cámaras ya calculados; "
         "frames: publica imágenes para que las analice el edge",
     )
+    p.add_argument(
+        "--plc",
+        choices=["mqtt", "opcua"],
+        default="mqtt",
+        help="mqtt: publica los tags del PLC por MQTT; opcua: los expone en un servidor OPC UA (como un PLC real)",
+    )
+    p.add_argument("--opcua-endpoint", default="opc.tcp://0.0.0.0:4840/minevision/")
     p.add_argument("--dry-run", action="store_true", help="imprime en consola en lugar de publicar")
     return p
 

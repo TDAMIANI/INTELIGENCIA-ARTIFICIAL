@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from mvtwin.api.common import DbSession
+from mvtwin.auth import Role, require
 from mvtwin.models import Asset
 from mvtwin.schemas import AssetCreate, AssetDetail, AssetNode, AssetSummary, AssetUpdate
 
@@ -80,7 +81,8 @@ def get_asset(code: str, session: DbSession) -> AssetDetail:
     return _to_detail(_get_by_code(session, code))
 
 
-@router.post("", response_model=AssetDetail, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AssetDetail, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require(Role.engineer))])
 def create_asset(payload: AssetCreate, session: DbSession) -> AssetDetail:
     if session.scalar(select(Asset.id).where(Asset.code == payload.code)) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Ya existe el activo '{payload.code}'")
@@ -97,7 +99,7 @@ def create_asset(payload: AssetCreate, session: DbSession) -> AssetDetail:
     return _to_detail(_get_by_code(session, asset.code))
 
 
-@router.patch("/{code}", response_model=AssetDetail)
+@router.patch("/{code}", response_model=AssetDetail, dependencies=[Depends(require(Role.engineer))])
 def update_asset(code: str, payload: AssetUpdate, session: DbSession) -> AssetDetail:
     asset = _get_by_code(session, code)
     if payload.name is not None:
@@ -108,7 +110,7 @@ def update_asset(code: str, payload: AssetUpdate, session: DbSession) -> AssetDe
     return _to_detail(_get_by_code(session, code))
 
 
-@router.delete("/{code}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{code}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require(Role.engineer))])
 def delete_asset(code: str, session: DbSession) -> Response:
     """Borra el activo y todo lo que cuelga de él (hijos, sensores, telemetría y alarmas)."""
     session.delete(_get_by_code(session, code))

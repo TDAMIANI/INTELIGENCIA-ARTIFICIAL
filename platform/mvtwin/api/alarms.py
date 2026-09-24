@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from mvtwin.api.common import DbSession, asset_id_by_code, subtree_ids
+from mvtwin.auth import Role, User, actor_name, require
 from mvtwin.models import Alarm, AlarmSeverity, AlarmStatus
 from mvtwin.schemas import AlarmAck, AlarmOut
 
@@ -31,13 +32,15 @@ def list_alarms(
 
 
 @router.post("/{alarm_id}/ack", response_model=AlarmOut)
-def acknowledge_alarm(alarm_id: int, payload: AlarmAck, session: DbSession) -> AlarmOut:
+def acknowledge_alarm(
+    alarm_id: int, payload: AlarmAck, session: DbSession, user: User = Depends(require(Role.operator))
+) -> AlarmOut:
     """El operador confirma que vio la alarma. No la cierra: se cierra sola al normalizarse."""
     alarm = session.get(Alarm, alarm_id, options=[selectinload(Alarm.asset)])
     if alarm is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Alarma {alarm_id} no encontrada")
     if alarm.acknowledged_at is None:
         alarm.acknowledged_at = datetime.now(UTC)
-        alarm.acknowledged_by = payload.user
+        alarm.acknowledged_by = actor_name(user, payload.user)
         session.commit()
     return AlarmOut.from_model(alarm)
