@@ -66,8 +66,11 @@ class Asset(Base):
         ForeignKey("assets.id", ondelete="CASCADE"), index=True, default=None
     )
     attributes: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
-    # Índice de salud 0-100; lo calcula el motor del gemelo (Sprint 4). None = sin datos.
+    # Índice de salud 0-100; lo calcula el motor del gemelo. None = sin datos.
     health_index: Mapped[float | None] = mapped_column(default=None)
+    # Explicación del HI: resultado de cada indicador (valor, severidad, tendencia...).
+    health_details: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    health_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -195,3 +198,51 @@ class Event(Base):
 
     asset: Mapped[Asset] = relationship()
     sensor: Mapped[Sensor] = relationship()
+
+
+class HealthHistory(Base):
+    """Evolución del índice de salud (hypertable en TimescaleDB)."""
+
+    __tablename__ = "health_history"
+
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    health_index: Mapped[float] = mapped_column(Float)
+
+
+class RecommendationStatus(str, enum.Enum):
+    open = "open"  # nueva, sin revisar
+    accepted = "accepted"  # planificada (se generó la orden de trabajo)
+    dismissed = "dismissed"  # descartada por el planificador
+    done = "done"  # trabajo realizado
+
+
+class Recommendation(Base):
+    """Recomendación de mantenimiento generada por el gemelo digital."""
+
+    __tablename__ = "recommendations"
+    __table_args__ = (Index("ix_recommendations_asset_indicator", "asset_id", "indicator"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"))
+    failure_mode_id: Mapped[int | None] = mapped_column(
+        ForeignKey("failure_modes.id", ondelete="SET NULL"), default=None
+    )
+    indicator: Mapped[str] = mapped_column(String(64))
+    rule_code: Mapped[str] = mapped_column(String(64))
+    priority: Mapped[str] = mapped_column(String(16))
+    status: Mapped[RecommendationStatus] = mapped_column(
+        _enum(RecommendationStatus, "recommendation_status"), default=RecommendationStatus.open, index=True
+    )
+    action: Mapped[str] = mapped_column(String(300))
+    reason: Mapped[str] = mapped_column(String(500))
+    due_by: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # False cuando el indicador volvió a la normalidad (la recomendación no se cierra sola).
+    condition_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str | None] = mapped_column(String(100), default=None)
+    note: Mapped[str | None] = mapped_column(String(500), default=None)
+
+    asset: Mapped[Asset] = relationship()
+    failure_mode: Mapped[FailureMode | None] = relationship()

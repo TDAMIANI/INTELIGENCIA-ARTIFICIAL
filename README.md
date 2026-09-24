@@ -5,7 +5,7 @@
 Visión artificial + gemelos digitales para mantenimiento predictivo en plantas mineras.
 
 - Plan del proyecto: [docs/PLAN_VISION_GEMELO_DIGITAL.md](docs/PLAN_VISION_GEMELO_DIGITAL.md)
-- Estado: **Sprint 3 completo** (visión artificial en el edge: termografía por polín, desalineamiento de banda, YOLO y eventos con imagen de evidencia)
+- Estado: **Sprint 4 completo** (gemelo digital: índice de salud por componente, tendencia y recomendaciones de mantenimiento)
 
 ### Estructura
 
@@ -36,6 +36,7 @@ make up        # o: docker compose -f infra/docker-compose.yml up -d --build
 
 Al arrancar, el servicio `migrate` aplica las migraciones y carga `config/plant.yaml`.
 El servicio `ingestion` guarda toda la telemetría en TimescaleDB y evalúa las alarmas.
+El servicio `twin` recalcula cada 30 s la salud de cada activo y las recomendaciones.
 
 ### Flujo de datos
 
@@ -62,6 +63,30 @@ Ejemplo de imagen de evidencia generada por el edge al detectar el polín 12 cal
 
 La configuración (cámaras, ROIs, umbrales, zonas) está en `edge/config/edge.yaml`. Detalle en [edge/README.md](edge/README.md).
 
+### Gemelo digital: salud y recomendaciones
+
+Cada componente tiene un **índice de salud (HI) de 0 a 100**:
+
+```
+HI = 100 − Σ (peso × severidad)        severidad 0-100 según la curva de cada indicador
+```
+
+| Indicador | Mide | Curva de severidad |
+|---|---|---|
+| `HI-IDL-TEMP` | ΔT del polín contra sus vecinos | 5 °C → 0 · 15 °C → 40 · 30 °C → 80 · 45 °C → 100 |
+| `HI-MOT-VIB` | Vibración del motor | Zonas de ISO 10816 clase III: A → 0 · B → 30 · C → 70 · D → 100 |
+| `HI-BELT-ALIGN` | Desalineamiento de la banda | 10 mm → 0 · 30 mm → 40 · 50 mm → 80 · 80 mm → 100 |
+
+- **Explicable:** cada HI trae el detalle de cada indicador (valor, severidad y aporte).
+- **Jerarquía:** el HI de la correa, el área y la planta es el de su peor componente.
+- **Contexto operativo:** con la correa detenida no se recalcula. Un polín que se enfría porque la correa paró no está "reparado".
+- **Tendencia:** con la última hora se estima en cuántas horas el indicador llega a la zona crítica.
+
+Las **recomendaciones** salen de `maintenance_rules` en `config/plant.yaml`. Ejemplos: "Inspeccionar el polín" con severidad 25, "Cambiarlo en la próxima parada" con 40 y "Cambio urgente" con 80.
+- Por cada activo e indicador hay una sola recomendación pendiente. Si la condición empeora, sube de prioridad.
+- Si la tendencia indica que el activo llega antes a la zona crítica, el plazo se adelanta.
+- El planificador la acepta (se genera la OT), la descarta o la cierra. Una recomendación descartada no se vuelve a proponer por 24 h, salvo que empeore.
+
 ### API (detalle en http://localhost:8000/docs)
 
 | Método | Ruta | Para qué |
@@ -72,10 +97,15 @@ La configuración (cámaras, ROIs, umbrales, zonas) está en `edge/config/edge.y
 | GET | `/api/v1/telemetry/latest?asset=CV-201-IDL&subtree=true` | Último valor de cada métrica (p. ej. los 40 polines) |
 | GET | `/api/v1/alarms?status=active&asset=CV-201` | Alarmas (incluye las de los activos hijos) |
 | POST | `/api/v1/alarms/{id}/ack` | El operador confirma que vio la alarma |
+| GET | `/api/v1/assets/{code}/health` | Índice de salud con su explicación y el de sus hijos |
+| GET | `/api/v1/assets/{code}/health/history` | Evolución del índice de salud |
+| GET | `/api/v1/recommendations?asset=CV-201` | Recomendaciones pendientes, por prioridad y plazo |
+| PATCH | `/api/v1/recommendations/{id}` | Aceptar, descartar o cerrar (`{"status", "user", "note"}`) |
 | GET | `/api/v1/events?asset=CV-201&type=thermal_hotspot` | Eventos de visión del edge |
 | GET | `/api/v1/events/{id}/snapshot` | Imagen de evidencia del evento (JPEG) |
 | WS | `/ws/alarms` | Alarmas en vivo (raised / escalated / cleared) |
 | WS | `/ws/events` | Eventos de visión en vivo |
+| WS | `/ws/twin` | Cambios de salud y recomendaciones en vivo |
 | WS | `/ws/telemetry/{sensor_code}` | Telemetría en vivo de un sensor |
 
 ### Alarmas

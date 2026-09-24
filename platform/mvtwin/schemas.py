@@ -3,10 +3,18 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mvtwin.models import AlarmSeverity, AlarmStatus, AssetLevel, EventSeverity, SensorSource, SensorType
+from mvtwin.models import (
+    AlarmSeverity,
+    AlarmStatus,
+    AssetLevel,
+    EventSeverity,
+    RecommendationStatus,
+    SensorSource,
+    SensorType,
+)
 
 if TYPE_CHECKING:
-    from mvtwin.models import Alarm, Event
+    from mvtwin.models import Alarm, Event, Recommendation
 
 
 class SensorOut(BaseModel):
@@ -157,3 +165,65 @@ class EventOut(BaseModel):
             snapshot_url=f"/api/v1/events/{event.id}/snapshot" if has_snapshot else None,
             data=event.data,
         )
+
+
+class HealthOut(BaseModel):
+    asset_code: str
+    asset_name: str
+    health_index: float | None
+    updated_at: datetime | None
+    own_health_index: float | None
+    worst_child: str | None
+    indicators: list[dict[str, Any]]
+    children: list[AssetSummary]
+
+
+class HealthPoint(BaseModel):
+    ts: datetime
+    health_index: float
+
+
+class RecommendationOut(BaseModel):
+    id: int
+    asset_code: str
+    asset_name: str
+    indicator: str
+    rule_code: str
+    failure_mode: str | None
+    priority: str
+    status: RecommendationStatus
+    action: str
+    reason: str
+    due_by: datetime
+    condition_active: bool
+    created_at: datetime
+    updated_at: datetime
+    updated_by: str | None
+    note: str | None
+
+    @classmethod
+    def from_model(cls, rec: "Recommendation") -> "RecommendationOut":
+        return cls(
+            id=rec.id,
+            asset_code=rec.asset.code,
+            asset_name=rec.asset.name,
+            indicator=rec.indicator,
+            rule_code=rec.rule_code,
+            failure_mode=rec.failure_mode.name if rec.failure_mode else None,
+            priority=rec.priority,
+            status=rec.status,
+            action=rec.action,
+            reason=rec.reason,
+            due_by=rec.due_by,
+            condition_active=rec.condition_active,
+            created_at=rec.created_at,
+            updated_at=rec.updated_at,
+            updated_by=rec.updated_by,
+            note=rec.note,
+        )
+
+
+class RecommendationUpdate(BaseModel):
+    status: RecommendationStatus
+    user: str = Field(min_length=1, max_length=100)
+    note: str | None = Field(default=None, max_length=500)

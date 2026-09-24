@@ -2,6 +2,7 @@
 
 - /ws/alarms                    cambios de alarmas (raised / escalated / cleared)
 - /ws/events                    eventos de visión del edge (con link a la imagen de evidencia)
+- /ws/twin                      cambios del índice de salud y recomendaciones nuevas o actualizadas
 - /ws/telemetry/{sensor_code}   telemetría de un sensor, tal como llega del edge
 
 La API escucha MQTT en un hilo de paho y reparte cada mensaje a las colas asyncio
@@ -59,7 +60,7 @@ hub = LiveHub()
 
 def channel_for_topic(topic: str) -> str | None:
     parts = topic.split("/")
-    if len(parts) == 3 and parts[0] == "mvt" and parts[2] in ("alarms", "events"):
+    if len(parts) == 3 and parts[0] == "mvt" and parts[2] in ("alarms", "events", "twin"):
         return parts[2]
     if len(parts) == 4 and parts[0] == "mvt" and parts[3] == "telemetry":
         return f"telemetry:{parts[2]}"
@@ -73,7 +74,7 @@ def start_mqtt_bridge(host: str, port: int):  # pragma: no cover - se prueba con
 
     def on_connect(c, _u, _f, reason_code, _p):
         log.info("Puente MQTT conectado a %s:%s (%s)", host, port, reason_code)
-        c.subscribe([("mvt/+/alarms", 1), ("mvt/+/events", 1), ("mvt/+/+/telemetry", 0)])
+        c.subscribe([("mvt/+/alarms", 1), ("mvt/+/events", 1), ("mvt/+/twin", 1), ("mvt/+/+/telemetry", 0)])
 
     def on_message(_c, _u, msg):
         channel = channel_for_topic(msg.topic)
@@ -120,6 +121,11 @@ async def ws_alarms(websocket: WebSocket) -> None:
 @router.websocket("/ws/events")
 async def ws_events(websocket: WebSocket) -> None:
     await _pump(websocket, "events")
+
+
+@router.websocket("/ws/twin")
+async def ws_twin(websocket: WebSocket) -> None:
+    await _pump(websocket, "twin")
 
 
 @router.websocket("/ws/telemetry/{sensor_code}")

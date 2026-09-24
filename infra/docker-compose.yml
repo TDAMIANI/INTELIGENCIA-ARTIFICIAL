@@ -72,6 +72,18 @@ services:
       migrate: { condition: service_completed_successfully }
       mqtt: { condition: service_healthy }
 
+  # Motor del gemelo digital: índice de salud, tendencia y recomendaciones
+  twin:
+    image: minevision/platform:dev
+    command: ["python", "-m", "mvtwin.twin"]
+    environment:
+      MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@db:5432/mvt
+      MVT_MQTT_HOST: mqtt
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      mqtt: { condition: service_healthy }
+
   # Correa simulada. Con --cameras frames publica imágenes de las cámaras virtuales
   # y el edge las analiza (igual que haría con cámaras reales).
   simulator:

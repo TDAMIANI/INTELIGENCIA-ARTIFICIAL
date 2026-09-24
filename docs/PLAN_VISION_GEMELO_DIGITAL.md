@@ -379,10 +379,11 @@ Fase 3                            ███████████████�
 - [x] Publicación de eventos con snapshot a S3 (SeaweedFS); la plataforma los guarda y sirve la imagen.
 - [x] Extra: medición del desalineamiento de banda con visión clásica y cámaras virtuales en el simulador.
 
-**Sprint 4 — Motor del gemelo v1**
-- [ ] Health Index por componente con reglas configurables (YAML).
-- [ ] Generación de alarmas con severidad y deduplicación.
-- [ ] Recomendaciones de mantenimiento básicas.
+**Sprint 4 — Motor del gemelo v1** ✅ completado
+- [x] Health Index por componente con reglas configurables (YAML): curvas de severidad por indicador, contexto operativo (solo con la correa en marcha) y propagación al peor hijo.
+- [x] Generación de alarmas con severidad y deduplicación (adelantado en el Sprint 2).
+- [x] Recomendaciones de mantenimiento: regla más exigente por activo, sin duplicados, escalamiento, supresión tras descarte y vínculo al modo de falla del FMEA.
+- [x] Extra: tendencia de la última hora y tiempo estimado hasta la zona crítica (primera aproximación a la RUL), que adelanta el plazo de la recomendación.
 
 **Sprint 5 — Dashboard**
 - [ ] Árbol de activos con el color de salud.
