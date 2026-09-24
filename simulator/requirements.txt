@@ -1,0 +1,4 @@
+paho-mqtt>=2.1
+numpy>=1.26
+opencv-python-headless>=4.9
+asyncua>=1.1

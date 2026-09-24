@@ -1,0 +1,160 @@
+# Entorno completo de MineVision Twin (desarrollo y demostración).
+#   docker compose -f infra/docker-compose.yml up -d --build
+#   Tablero: http://localhost:8080   (usuarios de demo en infra/users.yaml, p. ej. operador / operador-demo)
+# Las credenciales de este archivo son SOLO para desarrollo: en planta se definen en un .env
+# o en el gestor de secretos, y la autenticación se conecta al SSO (MVT_AUTH_MODE=oidc).
+
+name: minevision-twin
+
+x-platform-env: &platform-env
+  MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@db:5432/mvt
+  MVT_MQTT_HOST: mqtt
+
+x-platform-deps: &platform-deps
+  migrate: { condition: service_completed_successfully }
+  mqtt: { condition: service_healthy }
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: mvt
+      POSTGRES_PASSWORD: mvt
+      POSTGRES_DB: mvt
+    ports: ["5432:5432"]
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mvt -d mvt"]
+      interval: 5s
+      retries: 20
+
+  mqtt:
+    image: emqx/emqx:5.8
+    ports:
+      - "1883:1883"   # MQTT
+      - "18083:18083" # dashboard EMQX (admin / public)
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      retries: 20
+
+  # Almacenamiento de objetos compatible con S3 (imágenes, clips, modelos).
+  # SeaweedFS en lugar de MinIO: MinIO dejó de publicar imágenes de la edición comunitaria.
+  objectstore:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports: ["8333:8333"]
+    volumes:
+      - objects-data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+
+  migrate:
+    build: { context: .., dockerfile: platform/Dockerfile }
+    image: minevision/platform:dev
+    command: ["sh", "-c", "alembic upgrade head && python -m mvtwin.seed"]
+    environment: *platform-env
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    image: minevision/platform:dev
+    environment:
+      <<: *platform-env
+      MVT_S3_ENDPOINT: http://objectstore:8333
+      MVT_S3_ACCESS_KEY: mvt-dev
+      MVT_S3_SECRET_KEY: mvt-dev-secret
+      MVT_AUTH_ENABLED: "true"
+      MVT_AUTH_MODE: local
+      MVT_AUTH_USERS_FILE: /config/users.yaml
+      MVT_AUTH_SECRET: ${MVT_AUTH_SECRET:-solo-desarrollo-cambiar-este-secreto-en-planta}
+      # MVT_CMMS_WEBHOOK_URL: https://integracion.mina.local/sap-pm/avisos
+    volumes:
+      - ./users.yaml:/config/users.yaml:ro
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      retries: 10
+    depends_on: *platform-deps
+
+  # Tablero web (nginx deriva /api y /ws a la API)
+  web:
+    build: ../web
+    ports: ["8080:80"]
+    depends_on: [api]
+
+  # MQTT -> TimescaleDB + alarmas en tiempo real
+  ingestion:
+    image: minevision/platform:dev
+    command: ["python", "-m", "mvtwin.ingestion"]
+    environment: *platform-env
+    restart: unless-stopped
+    depends_on: *platform-deps
+
+  # Motor del gemelo digital: índice de salud, tendencia y recomendaciones
+  twin:
+    image: minevision/platform:dev
+    command: ["python", "-m", "mvtwin.twin"]
+    environment: *platform-env
+    restart: unless-stopped
+    depends_on: *platform-deps
+
+  # Avisos por email / Teams / Slack de alarmas críticas y mantenimiento urgente.
+  # Sin configurar canales, los avisos quedan en el log del servicio.
+  notify:
+    image: minevision/platform:dev
+    command: ["python", "-m", "mvtwin.integrations.notify"]
+    environment:
+      <<: *platform-env
+      MVT_DASHBOARD_URL: http://localhost:8080
+      # MVT_NOTIFY_WEBHOOK_URL: https://outlook.office.com/webhook/...
+      # MVT_SMTP_HOST: smtp.mina.local
+      # MVT_NOTIFY_EMAIL_TO: mantenimiento@mina.local,sala-control@mina.local
+    restart: unless-stopped
+    depends_on: *platform-deps
+
+  # Correa simulada: imágenes de las cámaras virtuales por MQTT (las analiza el edge)
+  # y tags del PLC por OPC UA (los lee el edge), igual que en una planta real.
+  simulator:
+    build: ../simulator
+    command: ["--broker", "mqtt", "--interval", "1", "--cameras", "frames", "--plc", "opcua"]
+    ports: ["4840:4840"] # OPC UA (se puede explorar con UaExpert)
+    depends_on:
+      mqtt: { condition: service_healthy }
+
+  # Gateway edge: visión artificial (termografía por polín, banda, YOLO opcional) y PLC por OPC UA.
+  # Para activar YOLO: build arg WITH_YOLO=1 y MVT_EDGE_YOLO=true.
+  edge:
+    build:
+      context: ../edge
+      args: { WITH_YOLO: "0" }
+    environment:
+      MVT_MQTT_HOST: mqtt
+      MVT_S3_ENDPOINT: http://objectstore:8333
+      MVT_EDGE_YOLO: "false"
+      MVT_EDGE_PLC: "true"
+      MVT_OPCUA_ENDPOINT: opc.tcp://simulator:4840/minevision/
+    restart: unless-stopped
+    depends_on:
+      mqtt: { condition: service_healthy }
+      objectstore: { condition: service_started }
+      simulator: { condition: service_started }
+
+  # Cámaras RTSP simuladas (o videos reales de simulator/video/samples) para probar con cámaras IP
+  rtsp:
+    image: bluenviron/mediamtx:latest
+    ports: ["8554:8554"]
+
+  video-feeder:
+    image: linuxserver/ffmpeg:latest
+    entrypoint: ["/bin/sh", "/feed.sh"]
+    environment:
+      RTSP_URL: rtsp://rtsp:8554
+    volumes:
+      - ../simulator/video/feed.sh:/feed.sh:ro
+      - ../simulator/video/samples:/samples:ro
+    depends_on: [rtsp]
+
+volumes:
+  db-data:
+  objects-data:

@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+*.egg-info/
+# Videos y datasets pesados no van a git
+simulator/video/samples/*.mp4
+ml/datasets/
+# Modelos de IA (se descargan o se entrenan; no van a git)
+*.pt
+*.onnx
+*.engine
+
+# Frontend
+node_modules/
+web/dist/
+*.tsbuildinfo
