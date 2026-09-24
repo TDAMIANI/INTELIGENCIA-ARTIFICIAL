@@ -373,10 +373,11 @@ Fase 3                            ███████████████�
 - [x] WebSocket de alarmas en tiempo real.
 - [x] Adelantado del Sprint 4: alarmas por umbral con confirmación, histéresis y escalamiento (reglas en `config/plant.yaml`).
 
-**Sprint 3 — Pipeline de visión en el edge**
-- [ ] Captura RTSP + inferencia YOLO preentrenada (prueba con las clases base).
-- [ ] Pipeline térmico: ROI por polín, ΔT contra vecinos y generación de evento.
-- [ ] Publicación de eventos con snapshot a MinIO.
+**Sprint 3 — Pipeline de visión en el edge** ✅ completado
+- [x] Captura RTSP + inferencia YOLO preentrenada (prueba con las clases base: personas en zona de riesgo).
+- [x] Pipeline térmico: ROI por polín, ΔT contra vecinos y generación de evento.
+- [x] Publicación de eventos con snapshot a S3 (SeaweedFS); la plataforma los guarda y sirve la imagen.
+- [x] Extra: medición del desalineamiento de banda con visión clásica y cámaras virtuales en el simulador.
 
 **Sprint 4 — Motor del gemelo v1**
 - [ ] Health Index por componente con reglas configurables (YAML).

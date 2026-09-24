@@ -1,0 +1,57 @@
+# Configuración del gateway edge de la correa CV-201.
+# Las variables ${VAR:-defecto} se toman del entorno (útil en docker compose).
+site: mina-demo
+gateway_id: edge-cv201
+
+mqtt:
+  host: ${MVT_MQTT_HOST:-localhost}
+  port: 1883
+
+# Evidencias (imágenes de los eventos). Quitar esta sección para no guardar imágenes.
+s3:
+  endpoint: ${MVT_S3_ENDPOINT:-http://localhost:8333}
+  access_key: ${MVT_S3_ACCESS_KEY:-mvt-dev}
+  secret_key: ${MVT_S3_SECRET_KEY:-mvt-dev-secret}
+  bucket: mvt-evidence
+
+cameras:
+  # Cámara térmica radiométrica que cubre los 40 polines.
+  - code: CV-201-TH-01
+    kind: thermal
+    # Con el simulador: imágenes por MQTT. Con una cámara real se usa su SDK/stream radiométrico.
+    source: { type: mqtt, topic: "mvt/mina-demo/sim/frames/CV-201-TH-01" }
+    interval_s: 1
+    radiometric: { scale: 0.01, offset_c: -273.15 }  # píxel = centésimas de Kelvin
+    rois:
+      # Grilla de 2 filas x 20 polines (debe coincidir con la vista de la cámara).
+      grid: { code: "CV-201-IDL-{n:02d}", rows: 2, cols: 20, x0: 0, y0: 40, cell_w: 16, cell_h: 80 }
+    hotspot:
+      delta_c: 15      # °C sobre la mediana de los vecinos
+      confirm: 3       # imágenes seguidas
+      neighbours: 3
+      cooldown_s: 600  # no repetir el evento del mismo polín antes de 10 min
+
+  # Cámara RGB sobre la banda.
+  - code: CV-201-RGB-01
+    kind: rgb
+    source: { type: mqtt, topic: "mvt/mina-demo/sim/frames/CV-201-RGB-01" }
+    # Cámara real / video:  source: { type: rtsp, url: "rtsp://rtsp:8554/cv-201-rgb-01" }
+    interval_s: 1
+    belt:
+      mm_per_px: 3.0          # calibrar con el ancho conocido de la banda
+      ref_center_px: 320      # centro de la banda bien alineada
+      row_start: 20
+      row_end: 340
+      min_gradient: 40
+    detector:
+      enabled: ${MVT_EDGE_YOLO:-false}
+      model: yolo11n.pt       # en Jetson: yolo11n.engine (TensorRT)
+      confidence: 0.4
+      classes: [person]
+    rules:
+      - type: person_in_zone
+        label: person
+        severity: critical
+        message: "Persona en zona de riesgo de la correa ({confidence:.0%})"
+        zone: [[0, 0], [640, 0], [640, 360], [0, 360]]
+    cooldown_s: 60

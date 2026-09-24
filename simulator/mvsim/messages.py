@@ -21,9 +21,20 @@ def command_topic(site: str) -> str:
     return f"mvt/{site}/sim/cmd"
 
 
+def frame_topic(site: str, camera_code: str) -> str:
+    """Imágenes de las cámaras virtuales (las consume el edge como si fueran cámaras reales)."""
+    return f"mvt/{site}/sim/frames/{camera_code}"
+
+
+def camera_codes(sim: ConveyorSimulator) -> tuple[str, str]:
+    """(cámara térmica, cámara RGB) de la correa."""
+    return f"{sim.config.code}-TH-01", f"{sim.config.code}-RGB-01"
+
+
 def snapshot_messages(
-    site: str, sim: ConveyorSimulator, snap: Snapshot, ts: datetime
+    site: str, sim: ConveyorSimulator, snap: Snapshot, ts: datetime, exclude: frozenset[str] = frozenset()
 ) -> list[tuple[str, dict[str, Any]]]:
+    """Mensajes de telemetría del paso. `exclude`: sensores que publica otro (p. ej. el edge)."""
     code = sim.config.code
     by_sensor: dict[str, dict[str, Any]] = {
         f"{code}-PLC": {
@@ -46,4 +57,5 @@ def snapshot_messages(
             {"ts": stamp, "sensor": sensor, "values": values, "simulated": True},
         )
         for sensor, values in by_sensor.items()
+        if sensor not in exclude
     ]

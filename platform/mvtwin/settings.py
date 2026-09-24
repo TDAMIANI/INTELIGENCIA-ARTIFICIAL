@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     mqtt_host: str | None = None
     mqtt_port: int = 1883
     ingestion_flush_s: float = 1.0
+    # Almacenamiento S3 de las imágenes de evidencia (lo usa la API para servirlas).
+    s3_endpoint: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
 
 
 settings = Settings()

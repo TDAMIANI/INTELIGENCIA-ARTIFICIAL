@@ -7,3 +7,7 @@ __pycache__/
 # Videos y datasets pesados no van a git
 simulator/video/samples/*.mp4
 ml/datasets/
+# Modelos de IA (se descargan o se entrenan; no van a git)
+*.pt
+*.onnx
+*.engine

@@ -23,9 +23,11 @@ jobs:
         with:
           python-version: "3.11"
       - name: Instalar dependencias
-        run: pip install -r platform/requirements-dev.txt -r simulator/requirements-dev.txt
+        run: pip install -r platform/requirements-dev.txt -r simulator/requirements-dev.txt -r edge/requirements-dev.txt
       - name: Tests del simulador
         run: cd simulator && python -m pytest -q
+      - name: Tests del edge (visión; YOLO se saltea sin ultralytics)
+        run: cd edge && python -m pytest -q -rs
       - name: Tests de la plataforma (SQLite + TimescaleDB)
         env:
           MVT_TEST_PG_URL: postgresql+psycopg://mvt:mvt@localhost:5432/mvt

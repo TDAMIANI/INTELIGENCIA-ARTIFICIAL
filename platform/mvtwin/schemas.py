@@ -3,10 +3,10 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mvtwin.models import AlarmSeverity, AlarmStatus, AssetLevel, SensorSource, SensorType
+from mvtwin.models import AlarmSeverity, AlarmStatus, AssetLevel, EventSeverity, SensorSource, SensorType
 
 if TYPE_CHECKING:
-    from mvtwin.models import Alarm
+    from mvtwin.models import Alarm, Event
 
 
 class SensorOut(BaseModel):
@@ -126,3 +126,34 @@ class AlarmOut(BaseModel):
 
 class AlarmAck(BaseModel):
     user: str = Field(min_length=1, max_length=100)
+
+
+class EventOut(BaseModel):
+    id: int
+    ts: datetime
+    asset_code: str
+    sensor_code: str
+    type: str
+    severity: EventSeverity
+    message: str
+    value: float | None
+    has_snapshot: bool
+    snapshot_url: str | None
+    data: dict[str, Any]
+
+    @classmethod
+    def from_model(cls, event: "Event") -> "EventOut":
+        has_snapshot = bool(event.snapshot_key)
+        return cls(
+            id=event.id,
+            ts=event.ts,
+            asset_code=event.asset.code,
+            sensor_code=event.sensor.code,
+            type=event.type,
+            severity=event.severity,
+            message=event.message,
+            value=event.value,
+            has_snapshot=has_snapshot,
+            snapshot_url=f"/api/v1/events/{event.id}/snapshot" if has_snapshot else None,
+            data=event.data,
+        )

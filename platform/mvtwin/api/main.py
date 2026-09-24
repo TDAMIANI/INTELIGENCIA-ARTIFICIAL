@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from mvtwin import __version__
-from mvtwin.api import alarms, assets, live, telemetry
+from mvtwin.api import alarms, assets, events, live, telemetry
 from mvtwin.settings import settings
 
 log = logging.getLogger("mvtwin.api")
@@ -33,6 +33,7 @@ app = FastAPI(
 app.include_router(assets.router)
 app.include_router(telemetry.router)
 app.include_router(alarms.router)
+app.include_router(events.router)
 app.include_router(live.router)
 
 

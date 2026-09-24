@@ -5,16 +5,17 @@
 Visión artificial + gemelos digitales para mantenimiento predictivo en plantas mineras.
 
 - Plan del proyecto: [docs/PLAN_VISION_GEMELO_DIGITAL.md](docs/PLAN_VISION_GEMELO_DIGITAL.md)
-- Estado: **Sprint 2 completo** (ingesta MQTT → TimescaleDB, alarmas en tiempo real, API de series de tiempo y WebSocket)
+- Estado: **Sprint 3 completo** (visión artificial en el edge: termografía por polín, desalineamiento de banda, YOLO y eventos con imagen de evidencia)
 
 ### Estructura
 
 ```
 config/plant.yaml   Jerarquía de activos de la planta demo (correa CV-201 con 40 polines)
 platform/           API FastAPI, modelo de datos, ingesta MQTT y alarmas           [paquete mvtwin]
-simulator/          Simulador de telemetría con fallas inyectables + cámaras RTSP  [paquete mvsim]
+simulator/          Simulador de la correa con fallas inyectables y cámaras virtuales [paquete mvsim]
+edge/               Gateway edge: visión artificial sobre las cámaras            [paquete mvedge]
 infra/              docker-compose del entorno de desarrollo
-edge/ web/ ml/      Se desarrollan en los próximos sprints
+web/ ml/            Se desarrollan en los próximos sprints
 ```
 
 ### Levantar el entorno
@@ -39,10 +40,27 @@ El servicio `ingestion` guarda toda la telemetría en TimescaleDB y evalúa las 
 ### Flujo de datos
 
 ```
-simulador / edge ──MQTT──► ingestion ──► TimescaleDB (telemetry, alarms)
-                              │
-                              └─ cambios de alarmas ──MQTT──► API ──WebSocket──► navegador
+simulador ──imágenes──► edge (visión) ──telemetría + eventos──┐
+    │                       └─ foto de evidencia ──► S3       │
+    └────── PLC y vibración ─────────────────────────MQTT─────┤
+                                                              ▼
+                              ingestion ──► TimescaleDB (telemetry, alarms, events)
+                                  └─ alarmas y eventos ──MQTT──► API ──WebSocket──► navegador
 ```
+
+### Visión artificial en el edge
+
+| Cámara | Qué analiza | Técnica | Publica |
+|---|---|---|---|
+| Térmica `CV-201-TH-01` | Temperatura de cada uno de los 40 polines | Imagen radiométrica, máximo por ROI, ΔT contra vecinos | `max_temp_c` por polín y evento `thermal_hotspot` con foto |
+| RGB `CV-201-RGB-01` | Posición de la banda | Visión clásica (bordes con gradiente) | `belt_edge_offset_mm`, `belt_width_mm` |
+| RGB `CV-201-RGB-01` | Personas en zona de riesgo (opcional) | YOLO preentrenado | `count_person` y evento `person_in_zone` con foto |
+
+Ejemplo de imagen de evidencia generada por el edge al detectar el polín 12 caliente:
+
+![Evidencia térmica](docs/img/evidencia_termica.jpg)
+
+La configuración (cámaras, ROIs, umbrales, zonas) está en `edge/config/edge.yaml`. Detalle en [edge/README.md](edge/README.md).
 
 ### API (detalle en http://localhost:8000/docs)
 
@@ -54,7 +72,10 @@ simulador / edge ──MQTT──► ingestion ──► TimescaleDB (telemetry,
 | GET | `/api/v1/telemetry/latest?asset=CV-201-IDL&subtree=true` | Último valor de cada métrica (p. ej. los 40 polines) |
 | GET | `/api/v1/alarms?status=active&asset=CV-201` | Alarmas (incluye las de los activos hijos) |
 | POST | `/api/v1/alarms/{id}/ack` | El operador confirma que vio la alarma |
+| GET | `/api/v1/events?asset=CV-201&type=thermal_hotspot` | Eventos de visión del edge |
+| GET | `/api/v1/events/{id}/snapshot` | Imagen de evidencia del evento (JPEG) |
 | WS | `/ws/alarms` | Alarmas en vivo (raised / escalated / cleared) |
+| WS | `/ws/events` | Eventos de visión en vivo |
 | WS | `/ws/telemetry/{sensor_code}` | Telemetría en vivo de un sensor |
 
 ### Alarmas
@@ -94,15 +115,18 @@ Para usar videos reales de correas, copialos a `simulator/video/samples/` con el
 | `CV-201-PLC` | `running`, `belt_speed_mps`, `motor_current_a`, `load_tph` |
 | `CV-201-MOT-VIB` | `vibration_rms_mm_s` |
 | `CV-201-TH-01` | `max_temp_c` como objeto `{"CV-201-IDL-01": 31.2, ...}` (un valor por polín) |
-| `CV-201-RGB-01` | `belt_edge_offset_mm` |
+| `CV-201-RGB-01` | `belt_edge_offset_mm`, `belt_width_mm`, `belt_detected`, `count_<clase>` |
 
-El edge real (Sprint 3) publicará los mismos tópicos, así que la plataforma no distingue entre datos simulados y reales.
+Eventos de visión: `mvt/{site}/{sensor_code}/event` con `{"ts", "type", "asset", "severity", "message", "value", "snapshot": {"bucket", "key"}, "data"}`.
+
+Las cámaras las analiza el edge. Con `--cameras telemetry` el simulador publica directamente los valores de las cámaras, sin imágenes (útil sin edge). Con `--cameras frames`, que es lo que usa docker compose, publica imágenes en `mvt/{site}/sim/frames/{cámara}`.
 
 ### Desarrollo local sin Docker
 
 ```bash
-pip install -r platform/requirements-dev.txt -r simulator/requirements-dev.txt
+pip install -r platform/requirements-dev.txt -r simulator/requirements-dev.txt -r edge/requirements-dev.txt
 make test
+# Para incluir la prueba de YOLO: pip install -r edge/requirements-yolo.txt
 # Para correr también los tests contra PostgreSQL/TimescaleDB:
 MVT_TEST_PG_URL=postgresql+psycopg://mvt:mvt@localhost:5432/mvt_test make test-platform
 ```

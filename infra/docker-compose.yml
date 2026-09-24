@@ -52,6 +52,9 @@ services:
     environment:
       MVT_DATABASE_URL: postgresql+psycopg://mvt:mvt@db:5432/mvt
       MVT_MQTT_HOST: mqtt
+      MVT_S3_ENDPOINT: http://objectstore:8333
+      MVT_S3_ACCESS_KEY: mvt-dev
+      MVT_S3_SECRET_KEY: mvt-dev-secret
     ports: ["8000:8000"]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -69,11 +72,28 @@ services:
       migrate: { condition: service_completed_successfully }
       mqtt: { condition: service_healthy }
 
+  # Correa simulada. Con --cameras frames publica imágenes de las cámaras virtuales
+  # y el edge las analiza (igual que haría con cámaras reales).
   simulator:
     build: ../simulator
-    command: ["--broker", "mqtt", "--interval", "1"]
+    command: ["--broker", "mqtt", "--interval", "1", "--cameras", "frames"]
     depends_on:
       mqtt: { condition: service_healthy }
+
+  # Gateway edge: visión artificial (termografía por polín, banda, YOLO opcional).
+  # Para activar YOLO: build arg WITH_YOLO=1 y MVT_EDGE_YOLO=true.
+  edge:
+    build:
+      context: ../edge
+      args: { WITH_YOLO: "0" }
+    environment:
+      MVT_MQTT_HOST: mqtt
+      MVT_S3_ENDPOINT: http://objectstore:8333
+      MVT_EDGE_YOLO: "false"
+    restart: unless-stopped
+    depends_on:
+      mqtt: { condition: service_healthy }
+      objectstore: { condition: service_started }
 
   rtsp:
     image: bluenviron/mediamtx:latest

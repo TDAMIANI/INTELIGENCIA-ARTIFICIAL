@@ -4,6 +4,9 @@ Suscribe a mvt/+/+/telemetry, guarda cada medición en `telemetry` (en lotes),
 evalúa las reglas de alarma y publica los cambios de alarmas en mvt/{site}/alarms,
 que la API retransmite a los navegadores por WebSocket.
 
+También suscribe a mvt/+/+/event (eventos de visión del edge con su imagen de
+evidencia), los guarda en `events` y los republica en mvt/{site}/events.
+
 Uso:  python -m mvtwin.ingestion
 """
 
@@ -18,10 +21,10 @@ from typing import Any
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from mvtwin.ingestion.parser import InvalidMessage, TelemetryMessage, parse_telemetry
+from mvtwin.ingestion.parser import InvalidMessage, TelemetryMessage, parse_event, parse_telemetry
 from mvtwin.ingestion.rules import AlarmEngine, AlarmTransition, TransitionKind, load_rules
-from mvtwin.models import Alarm, AlarmStatus, Asset, Sensor, Telemetry
-from mvtwin.schemas import AlarmOut
+from mvtwin.models import Alarm, AlarmStatus, Asset, Event, EventSeverity, Sensor, Telemetry
+from mvtwin.schemas import AlarmOut, EventOut
 from mvtwin.seed import load_plant_config
 
 log = logging.getLogger("mvtwin.ingestion")
@@ -31,6 +34,10 @@ Publisher = Callable[[str, dict[str, Any]], None]
 
 def alarms_topic(site: str) -> str:
     return f"mvt/{site}/alarms"
+
+
+def events_topic(site: str) -> str:
+    return f"mvt/{site}/events"
 
 
 class Ingestor:
@@ -83,6 +90,9 @@ class Ingestor:
     # --- procesamiento --------------------------------------------------------------------
 
     def handle(self, topic: str, payload: bytes | str) -> list[AlarmTransition]:
+        if topic.endswith("/event"):
+            self.handle_event(topic, payload)
+            return []
         try:
             msg = parse_telemetry(topic, payload)
         except InvalidMessage as exc:
@@ -103,6 +113,41 @@ class Ingestor:
         if transitions:
             self._apply_transitions(transitions, sensor_id=sensor[0])
         return transitions
+
+    def handle_event(self, topic: str, payload: bytes | str) -> Event | None:
+        try:
+            msg = parse_event(topic, payload)
+            severity = EventSeverity(msg.severity)
+        except (InvalidMessage, ValueError) as exc:
+            log.warning("Evento descartado: %s", exc)
+            return None
+        sensor = self._sensors.get(msg.sensor_code)
+        if sensor is None:
+            self._warn_unknown("Sensor", msg.sensor_code)
+            return None
+        asset_id = sensor[1] if msg.asset_code is None else self._assets.get(msg.asset_code)
+        if asset_id is None:
+            self._warn_unknown("Activo", msg.asset_code or "?")
+            return None
+        with self.session_factory() as s:
+            event = Event(
+                ts=msg.ts,
+                asset_id=asset_id,
+                sensor_id=sensor[0],
+                type=msg.type,
+                severity=severity,
+                message=msg.message,
+                value=msg.value,
+                snapshot_bucket=msg.snapshot_bucket,
+                snapshot_key=msg.snapshot_key,
+                data=msg.data,
+            )
+            s.add(event)
+            s.commit()
+            s.refresh(event, ["asset", "sensor"])
+            log.info("Evento %s en %s: %s", event.type, event.asset.code, event.message)
+            self.publish(events_topic(self.site), EventOut.from_model(event).model_dump(mode="json"))
+        return event
 
     def _buffer_rows(self, msg: TelemetryMessage, sensor: tuple[int, int, str]) -> None:
         sensor_id, sensor_asset_id, _ = sensor
@@ -204,7 +249,7 @@ def run() -> None:  # pragma: no cover - glue con MQTT, se prueba con docker com
 
     def on_connect(c, _u, _f, reason_code, _p):
         log.info("Conectado a MQTT %s:%s (%s)", settings.mqtt_host, settings.mqtt_port, reason_code)
-        c.subscribe("mvt/+/+/telemetry", qos=1)
+        c.subscribe([("mvt/+/+/telemetry", 1), ("mvt/+/+/event", 1)])
 
     def on_message(_c, _u, msg):
         try:

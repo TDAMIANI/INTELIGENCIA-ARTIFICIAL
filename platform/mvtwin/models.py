@@ -167,3 +167,31 @@ class Alarm(Base):
 
     asset: Mapped[Asset] = relationship()
     sensor: Mapped[Sensor | None] = relationship()
+
+
+class EventSeverity(str, enum.Enum):
+    info = "info"
+    warning = "warning"
+    critical = "critical"
+
+
+class Event(Base):
+    """Evento detectado por el edge (visión), con su imagen de evidencia en S3."""
+
+    __tablename__ = "events"
+    __table_args__ = (Index("ix_events_asset_ts", "asset_id", "ts"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"))
+    sensor_id: Mapped[int] = mapped_column(ForeignKey("sensors.id", ondelete="CASCADE"))
+    type: Mapped[str] = mapped_column(String(64))
+    severity: Mapped[EventSeverity] = mapped_column(_enum(EventSeverity, "event_severity"))
+    message: Mapped[str] = mapped_column(String(300))
+    value: Mapped[float | None] = mapped_column(Float, default=None)
+    snapshot_bucket: Mapped[str | None] = mapped_column(String(100), default=None)
+    snapshot_key: Mapped[str | None] = mapped_column(String(500), default=None)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+
+    asset: Mapped[Asset] = relationship()
+    sensor: Mapped[Sensor] = relationship()

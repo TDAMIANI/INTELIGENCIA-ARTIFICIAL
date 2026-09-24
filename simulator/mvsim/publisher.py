@@ -8,6 +8,10 @@ Ejemplos:
   # Publicar al broker de docker compose:
   python -m mvsim.publisher --broker localhost
 
+  # Publicar imágenes de las cámaras virtuales en lugar de la telemetría de cámaras
+  # (el edge las analiza y publica esa telemetría):
+  python -m mvsim.publisher --broker localhost --cameras frames
+
 Comandos en tiempo de ejecución (JSON al tópico mvt/{site}/sim/cmd):
   {"action": "inject", "kind": "idler_bearing", "target": 12, "ramp_s": 300}
   {"action": "inject", "kind": "motor_imbalance", "start_s": 30}
@@ -25,7 +29,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mvsim.conveyor import ConveyorConfig, ConveyorSimulator, Fault, FaultKind
-from mvsim.messages import command_topic, snapshot_messages
+from mvsim.messages import camera_codes, command_topic, frame_topic, snapshot_messages
 
 log = logging.getLogger("mvsim")
 
@@ -112,6 +116,15 @@ def run(args: argparse.Namespace) -> None:
     commands: queue.Queue[dict[str, Any]] = queue.Queue()
     client = None if args.dry_run else _connect_mqtt(args, commands)
 
+    frames = args.cameras == "frames"
+    exclude = frozenset(camera_codes(sim)) if frames else frozenset()
+    if frames:
+        import numpy as np
+
+        from mvsim import cameras
+
+        frame_rng = np.random.default_rng(args.seed)
+
     sim_dt = args.interval * args.speedup
     t0 = datetime.now(UTC)
     try:
@@ -124,11 +137,22 @@ def run(args: argparse.Namespace) -> None:
 
             snap = sim.step(sim_dt)
             ts = t0 + timedelta(seconds=sim.t)
-            for topic, payload in snapshot_messages(args.site, sim, snap, ts):
+            for topic, payload in snapshot_messages(args.site, sim, snap, ts, exclude):
                 if client is None:
                     print(topic, json.dumps(payload, ensure_ascii=False), flush=True)
                 else:
                     client.publish(topic, json.dumps(payload), qos=0)
+            if frames:
+                th_code, rgb_code = camera_codes(sim)
+                images = {
+                    th_code: cameras.encode_thermal(cameras.render_thermal(sim, snap, frame_rng)),
+                    rgb_code: cameras.encode_rgb(cameras.render_rgb(snap, frame_rng)),
+                }
+                for code, data in images.items():
+                    if client is None:
+                        print(frame_topic(args.site, code), f"<imagen {len(data)} bytes>", flush=True)
+                    else:
+                        client.publish(frame_topic(args.site, code), data, qos=0)
             if not args.dry_run:
                 time.sleep(args.interval)
     except KeyboardInterrupt:
@@ -151,6 +175,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--duration", type=float, default=0.0, help="segundos simulados (0 = infinito)")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--fault", action="append", default=[], help="kind[:target=N,start=S,ramp=S,severity=X]")
+    p.add_argument(
+        "--cameras",
+        choices=["telemetry", "frames"],
+        default="telemetry",
+        help="telemetry: publica los valores de las cámaras ya calculados; "
+        "frames: publica imágenes para que las analice el edge",
+    )
     p.add_argument("--dry-run", action="store_true", help="imprime en consola en lugar de publicar")
     return p
 
