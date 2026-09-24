@@ -11,3 +11,8 @@ ml/datasets/
 *.pt
 *.onnx
 *.engine
+
+# Frontend
+node_modules/
+web/dist/
+*.tsbuildinfo
