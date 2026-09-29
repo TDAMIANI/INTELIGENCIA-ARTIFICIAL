@@ -1,0 +1,32 @@
+# Usuarios de DEMOSTRACIÓN para docker compose (autenticación local).
+# Contraseñas: <usuario>-demo (p. ej. operador / operador-demo). NO usar en producción:
+# generar hashes con `python -m mvtwin.auth hash` o conectar el SSO de la empresa (MVT_AUTH_MODE=oidc).
+users:
+- username: admin
+  name: Administración
+  roles:
+  - admin
+  password_hash: scrypt$16384$8$1$qWI1xwoJK1qQGYK2BYEIAg==$A5aAPPQjz2L+TnvXIXBqc2N5bG31jWh5SYGXn44zNjo=
+- username: operador
+  name: Operador sala de control
+  roles:
+  - operator
+  password_hash: scrypt$16384$8$1$Iybp+fU7++Nz+Pm0gUoB8Q==$sKfQ9O2MgllmZDR/Y7F1BMQY4IjTxcagVAJ+wIXSgVU=
+- username: planificador
+  name: Planificador de mantenimiento
+  roles:
+  - planner
+  - operator
+  password_hash: scrypt$16384$8$1$6O8wS/ZPjl8FZq85VexPyw==$BS7nQJ3Ll+0yPnPtHKInKTT5PJifA5F2Tyc6pXwO+qc=
+- username: confiabilidad
+  name: Ingeniería de confiabilidad
+  roles:
+  - engineer
+  - planner
+  - operator
+  password_hash: scrypt$16384$8$1$68HKg3iSyVWIkm+SLYZjHg==$njzHulwjjchVXlDRXCQBHT/u/EwSRMBiuP2GVj0LIaY=
+- username: visor
+  name: Gerencia (solo consulta)
+  roles:
+  - viewer
+  password_hash: scrypt$16384$8$1$X5fy/BfIvJXqd7WyYuzUCA==$hXmFwEm++vIB2oEUGYCFpGAyW7YfIB5l/ADKDBQK6b0=

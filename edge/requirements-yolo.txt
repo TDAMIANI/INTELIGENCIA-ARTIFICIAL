@@ -1,0 +1,3 @@
+# Detección de objetos (opcional, pesada: instala PyTorch).
+-r requirements.txt
+ultralytics>=8.3

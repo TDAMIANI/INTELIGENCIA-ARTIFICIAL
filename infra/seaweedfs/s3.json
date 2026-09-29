@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "mvt",
+      "credentials": [{ "accessKey": "mvt-dev", "secretKey": "mvt-dev-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

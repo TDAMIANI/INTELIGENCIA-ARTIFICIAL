@@ -1,0 +1,247 @@
+# Jerarquía de activos de la planta demo (estilo ISO 14224).
+# Niveles: plant > area > system > subunit > component
+# La cargan `platform` (seed de la base de datos) y sirve de referencia
+# para los códigos de sensores que publica `simulator`.
+#
+# Convención de tópicos MQTT: mvt/{site}/{sensor_code}/telemetry
+
+site: mina-demo
+
+assets:
+  - code: PLT-01
+    level: plant
+    name: Planta concentradora demo
+    children:
+      - code: AREA-CHS
+        level: area
+        name: Chancado secundario
+        children:
+          - code: CV-201
+            level: system
+            name: Correa transportadora CV-201
+            attributes:
+              length_m: 180
+              belt_width_mm: 1200
+              nominal_speed_mps: 3.5
+              design_capacity_tph: 1500
+            sensors:
+              - code: CV-201-PLC
+                type: plc_tags
+                source: plc
+                config:
+                  opcua_node_prefix: "ns=2;s=CV201"
+                  tags: [running, belt_speed_mps, motor_current_a, load_tph]
+            children:
+              - code: CV-201-BELT
+                level: subunit
+                name: Banda
+                attributes:
+                  belt_type: EP-630/4
+                  installed_on: "2024-03-10"
+                sensors:
+                  - code: CV-201-RGB-01
+                    type: rgb_camera
+                    source: edge
+                    config:
+                      stream: rtsp://rtsp:8554/cv-201-rgb-01
+                      detects: [belt_damage, misalignment, spillage, foreign_object]
+                failure_modes:
+                  - code: FM-BELT-RIP
+                    name: Rotura longitudinal de banda
+                    criticality: 5
+                    detection: Visión RGB (detección de daño)
+                  - code: FM-BELT-SPLICE
+                    name: Empalme abierto o dañado
+                    criticality: 4
+                    detection: Visión RGB (detección de daño)
+                  - code: FM-BELT-MISALIGN
+                    name: Desalineamiento de banda
+                    criticality: 3
+                    detection: Visión RGB (posición del borde)
+
+              - code: CV-201-IDL
+                level: subunit
+                name: Estaciones de polines
+                sensors:
+                  - code: CV-201-TH-01
+                    type: thermal_camera
+                    source: edge
+                    config:
+                      stream: rtsp://rtsp:8554/cv-201-th-01
+                      covers: CV-201-IDL-01..CV-201-IDL-40
+                failure_modes:
+                  - code: FM-IDL-BEARING
+                    name: Rodamiento de polín trabado o sobrecalentado
+                    criticality: 4
+                    detection: Termografía (ΔT contra polines vecinos)
+                # Genera un componente por polín: CV-201-IDL-01 .. CV-201-IDL-40
+                generate:
+                  count: 40
+                  code: "CV-201-IDL-{n:02d}"
+                  name: "Polín {n}"
+                  level: component
+
+              - code: CV-201-PUL
+                level: subunit
+                name: Polea motriz
+
+              - code: CV-201-MOT
+                level: subunit
+                name: Motor M-201
+                attributes:
+                  rated_power_kw: 450
+                  rated_current_a: 95
+                  iso_10816_class: III
+                sensors:
+                  - code: CV-201-MOT-VIB
+                    type: vibration
+                    source: edge
+                    config:
+                      unit: mm/s RMS
+                failure_modes:
+                  - code: FM-MOT-IMBALANCE
+                    name: Desbalance
+                    criticality: 3
+                    detection: Vibración (ISO 10816)
+                  - code: FM-MOT-BEARING
+                    name: Falla de rodamiento
+                    criticality: 4
+                    detection: Vibración + temperatura
+
+              - code: CV-201-GBX
+                level: subunit
+                name: Reductor
+
+# Reglas de alarma de primer nivel (las evalúa el servicio de ingesta en tiempo real).
+# - warning / critical: umbrales de severidad.
+# - clear_below: la alarma se cierra recién cuando el valor baja de este nivel (histéresis).
+# - confirm: cantidad de muestras seguidas por encima del umbral antes de alarmar
+#   (evita alarmas por un pico aislado de ruido).
+# - mode: "value" (valor directo), "abs" (valor absoluto) o "delta_neighbours"
+#   (diferencia contra la mediana de los `neighbours` activos vecinos de cada lado,
+#   ideal para termografía de polines: independiza la alarma de la temperatura ambiente).
+alarm_rules:
+  - code: MOT-VIB-ISO10816
+    sensor: CV-201-MOT-VIB
+    metric: vibration_rms_mm_s
+    mode: value
+    warning: 4.5      # ISO 10816 clase III: límite zona B/C
+    critical: 7.1     # límite zona C/D
+    clear_below: 4.0
+    confirm: 3
+    message: "Vibración del motor {value:.1f} mm/s (umbral {threshold} mm/s)"
+
+  - code: IDL-HOTSPOT
+    sensor: CV-201-TH-01
+    metric: max_temp_c
+    mode: delta_neighbours
+    neighbours: 3
+    warning: 15       # °C por encima de sus vecinos
+    critical: 30
+    clear_below: 10
+    confirm: 3
+    message: "{asset}: {value:.0f} °C sobre sus vecinos (posible rodamiento trabado)"
+
+  - code: BELT-MISALIGN
+    sensor: CV-201-RGB-01
+    metric: belt_edge_offset_mm
+    mode: abs
+    warning: 30
+    critical: 50
+    clear_below: 20
+    confirm: 5
+    message: "Banda desalineada {value:.0f} mm"
+
+# --- Gemelo digital: índice de salud ---------------------------------------------------
+# HI = 100 − Σ(peso × severidad). La curva convierte el valor medido en severidad 0-100
+# (interpolación lineal por tramos). `context`: solo se evalúa si la correa está en marcha
+# (con la correa detenida se conserva el último valor, para no "mejorar" la salud falsamente).
+# `failure_mode` vincula el indicador con el modo de falla del FMEA.
+health_indicators:
+  - code: HI-IDL-TEMP
+    name: Temperatura del polín sobre sus vecinos
+    sensor: CV-201-TH-01
+    metric: max_temp_c
+    mode: delta_neighbours
+    neighbours: 3
+    unit: °C
+    curve: [[5, 0], [15, 40], [30, 80], [45, 100]]
+    failure_mode: FM-IDL-BEARING
+    context: { sensor: CV-201-PLC, metric: running, min: 0.5 }
+
+  - code: HI-MOT-VIB
+    name: Vibración del motor (ISO 10816 clase III)
+    sensor: CV-201-MOT-VIB
+    metric: vibration_rms_mm_s
+    unit: mm/s
+    # Zonas A (<2,3) = 0 · B (2,3-4,5) hasta 30 · C (4,5-7,1) hasta 70 · D (>7,1) hasta 100
+    curve: [[2.3, 0], [4.5, 30], [7.1, 70], [11, 100]]
+    critical_severity: 70
+    failure_mode: FM-MOT-IMBALANCE
+    context: { sensor: CV-201-PLC, metric: running, min: 0.5 }
+
+  - code: HI-BELT-ALIGN
+    name: Desalineamiento de la banda
+    sensor: CV-201-RGB-01
+    metric: belt_edge_offset_mm
+    mode: abs
+    unit: mm
+    curve: [[10, 0], [30, 40], [50, 80], [80, 100]]
+    failure_mode: FM-BELT-MISALIGN
+    context: { sensor: CV-201-PLC, metric: running, min: 0.5 }
+
+# --- Gemelo digital: recomendaciones de mantenimiento ------------------------------------
+# Para cada activo e indicador se aplica la regla más exigente que se cumpla.
+# El plazo (due_in_h) se adelanta si la tendencia indica que llega antes a la zona crítica.
+maintenance_rules:
+  - code: MR-IDL-INSPECT
+    indicator: HI-IDL-TEMP
+    min_severity: 25
+    priority: medium
+    due_in_h: 168
+    action: "Inspeccionar el polín {asset} (termografía portátil y ruido) en la próxima ronda"
+  - code: MR-IDL-REPLACE
+    indicator: HI-IDL-TEMP
+    min_severity: 40
+    priority: high
+    due_in_h: 72
+    action: "Cambiar el polín {asset} en la próxima parada programada"
+  - code: MR-IDL-URGENT
+    indicator: HI-IDL-TEMP
+    min_severity: 80
+    priority: urgent
+    due_in_h: 8
+    action: "Cambio urgente del polín {asset}: riesgo de trabado, daño de banda e incendio"
+
+  - code: MR-MOT-ANALYSIS
+    indicator: HI-MOT-VIB
+    min_severity: 30
+    priority: high
+    due_in_h: 168
+    action: "Análisis de vibraciones del motor {asset}: verificar balanceo, alineación y fijaciones"
+  - code: MR-MOT-STOP
+    indicator: HI-MOT-VIB
+    min_severity: 70
+    priority: urgent
+    due_in_h: 24
+    action: "Detener y revisar el motor {asset}: vibración en zona D de ISO 10816"
+
+  - code: MR-BELT-ALIGN
+    indicator: HI-BELT-ALIGN
+    min_severity: 40
+    priority: high
+    due_in_h: 48
+    action: "Alinear la banda ({asset}): revisar polines autoalineantes, tambores y carga centrada"
+  - code: MR-BELT-ALIGN-URGENT
+    indicator: HI-BELT-ALIGN
+    min_severity: 80
+    priority: urgent
+    due_in_h: 4
+    action: "Banda muy desalineada ({asset}): riesgo de rotura de bordes y derrame, corregir de inmediato"
+
+# Parámetros del motor del gemelo
+twin:
+  cycle_s: 30          # cada cuánto recalcula
+  window_s: 120        # promedio de los últimos 2 minutos (suaviza el ruido)
+  trend_window_s: 3600 # tendencia de la última hora para estimar el tiempo a zona crítica
+  trend_bucket_s: 60
